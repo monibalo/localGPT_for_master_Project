@@ -1,22 +1,46 @@
 ## h2oGPT
 
+[![img-small.png](docs/img-small.png) Live h2oGPT Demo](https://gpt.h2o.ai/)
+
+For questions, discussing, or just hanging out, come and join our <a href="https://discord.gg/WKhYMWcVbq"><b>Discord</b></a>!
+
+Technical Paper: [https://arxiv.org/pdf/2306.08161.pdf](https://arxiv.org/pdf/2306.08161.pdf)
+
 h2oGPT is a large language model (LLM) fine-tuning framework and chatbot UI with document(s) question-answer capabilities.  Documents help to **ground** LLMs against hallucinations by providing them context relevant to the instruction.  h2oGPT is fully permissive Apache V2 open-source project for 100% private and secure use of LLMs and document embeddings for document question-answer.
 
 Welcome!  Join us and make an issue or a PR, and contribute to making the best fine-tuned LLMs, chatbot UI, and document question-answer framework!
 
-### Try h2oGPT now 
+Turn ★ into ⭐ (top-right corner) if you like the project!
 
-Live hosted instances:
-- [![img-small.png](img-small.png) h2oGPT 12B](https://gpt.h2o.ai/)
-- [🤗 h2oGPT 12B #1](https://huggingface.co/spaces/h2oai/h2ogpt-chatbot)
-- [🤗 h2oGPT 12B #2](https://huggingface.co/spaces/h2oai/h2ogpt-chatbot2)
-- [![img-small.png](img-small.png) h2oGPT (research) 30B](http://gpt2.h2o.ai)
-- [![img-small.png](img-small.png) Latest LangChain-enabled h2oGPT (temporary link) 12B](https://b7d3d0f641ce517fb5.gradio.live/)
-- [![img-small.png](img-small.png) Latest LangChain-enabled h2oGPT (temporary link) 12B](https://e543f2006f237cb8dc.gradio.live)
-- [![img-small.png](img-small.png) Latest LangChain-enabled h2oGPT (temporary link) 12B](https://9ae2ee93116d6c21f2.gradio.live)
-- [![img-small.png](img-small.png) Latest LangChain-enabled h2oGPT (temporary link) 12B](https://9d2abc46e67a32b60c.gradio.live)
-
-For questions, discussing, or just hanging out, come and join our <a href="https://discord.gg/WKhYMWcVbq"><b>Discord</b></a>!
+<!--  cat README.md | ./gh-md-toc  -  But Help is heavily processed -->
+* [Supported OS and Hardware](#supported-os-and-hardware)
+* [Apache V2 ChatBot with LangChain Integration](#apache-v2-chatbot-with-langchain-integration)
+* [Apache V2 Data Preparation code, Training code, and Models](#apache-v2-data-preparation-code-training-code-and-models)
+* [Roadmap](#roadmap)
+* [Getting Started](#getting-started)
+   * [TLDR Install & Run](#tldr)
+   * [GPU (CUDA)](docs/README_GPU.md)
+   * [CPU](docs/README_CPU.md)
+   * [MACOS](docs/README_MACOS.md#macos)
+   * [Windows 10/11](docs/README_WINDOWS.md)
+   * [CLI chat](docs/README_CLI.md)
+   * [Gradio UI](docs/README_GRADIOUI.md)
+   * [Client API](docs/README_CLIENT.md)
+   * [Connect to Inference Servers](docs/README_InferenceServers.md)
+   * [Python Wheel](docs/README_WHEEL.md)
+* [Development](#development)
+* [Help](#help)
+   * [LangChain file types supported](docs/README_LangChain.md#supported-datatypes)
+   * [CLI Database control](docs/README_LangChain.md#database-creation)
+   * [Why h2oGPT for Doc Q&A](docs/README_LangChain.md#what-is-h2ogpts-langchain-integration-like)
+   * [FAQ](docs/FAQ.md)
+   * [Useful Links](docs/LINKS.md)
+   * [Fine-Tuning](docs/FINETUNE.md)
+   * [Docker](docs/INSTALL-DOCKER.md)
+   * [Triton](docs/TRITON.md)
+* [Acknowledgements](#acknowledgements)
+* [Why H2O.ai?](#why-h2oai)
+* [Disclaimer](#disclaimer)
 
 ### Supported OS and Hardware
 
@@ -26,33 +50,38 @@ For questions, discussing, or just hanging out, come and join our <a href="https
 ![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
 ![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)
 
-GPU mode requires CUDA support via torch and transformers.  A 6.9B (or 12GB) model in 8-bit uses 7GB (or 13GB) of GPU memory. 4-bit precision can further reduce memory requirements.
+**GPU** mode requires CUDA support via torch and transformers.  A 6.9B (or 12GB) model in 8-bit uses 8GB (or 13GB) of GPU memory. 8-bit or 4-bit precision can further reduce memory requirements down no more than about 6.5GB when asking a question about your documents (see [low-memory mode](docs/FAQ.md#low-memory-mode)).
 
-[CPU](FAQ.md#CPU) mode uses GPT4ALL and LLaMa.cpp, e.g. gpt4all-j, requiring about 14GB of system RAM in typical use.
+**CPU** mode uses GPT4ALL and LLaMa.cpp, e.g. gpt4all-j, requiring about 14GB of system RAM in typical use.
 
 GPU and CPU mode tested on variety of NVIDIA GPUs in Ubuntu 18-22, but any modern Linux variant should work.  MACOS support tested on Macbook Pro running Monterey v12.3.1 using CPU mode.
 
 ### Apache V2 ChatBot with LangChain Integration
 
-- [**LangChain**](README_LangChain.md) equipped Chatbot integration and streaming responses
+- [**LangChain**](docs/README_LangChain.md) equipped Chatbot integration and streaming responses
 - **Persistent** database using Chroma or in-memory with FAISS
 - **Original** content url links and scores to rank content against query
-- **Private** offline database of any documents ([PDFs and more](README_LangChain.md#supported-datatypes))
+- **Private** offline database of any documents ([PDFs, Images, and many more](docs/README_LangChain.md#supported-datatypes))
 - **Upload** documents via chatbot into shared space or only allow scratch space
 - **Control** data sources and the context provided to LLM
 - **Efficient** use of context using instruct-tuned LLMs (no need for many examples)
 - **API** for client-server control
 - **CPU and GPU** support from variety of HF models, and CPU support using GPT4ALL and LLaMa cpp
-- **Linux, [MAC](FAQ.md#macos), and Windows** support
+- **Linux, MAC, and Windows** support
 
-<img src="langchain.png" alt="VectorDB" title="VectorDB via LangChain">
+Light mode with soft colors talking to cat image:
+
+![Talk to Cat](docs/ui_talk_to_images.png)
+
+Dark mode with H2O.ai colors:
+<img src="docs/langchain.png" alt="VectorDB" title="VectorDB via LangChain">
 
 ### Apache V2 Data Preparation code, Training code, and Models
 
 - **Variety** of models (h2oGPT, WizardLM, Vicuna, OpenAssistant, etc.) supported
 - **Fully Commercially** Apache V2 code, data and models
 - **High-Quality** data cleaning of large open-source instruction datasets
-- **LORA** (low-rank approximation) efficient 4-bit, 8-bit and 16-bit fine-tuning and generation
+- **LoRA** and **QLoRA** (low-rank approximation) efficient 4-bit, 8-bit and 16-bit fine-tuning and generation
 - **Large** (up to 65B parameters) models built on commodity or enterprise GPUs (single or multi node)
 - **Evaluate** performance using RLHF-based reward models
 
@@ -62,81 +91,75 @@ All open-source datasets and models are posted on [🤗 H2O.ai's Hugging Face pa
 
 Also check out [H2O LLM Studio](https://github.com/h2oai/h2o-llmstudio) for our no-code LLM fine-tuning framework!
 
-### General Roadmap items
+### Roadmap
 
 - Integration of code and resulting LLMs with downstream applications and low/no-code platforms
 - Complement h2oGPT chatbot with search and other APIs
 - High-performance distributed training of larger models on trillion tokens
 - Enhance the model's code completion, reasoning, and mathematical capabilities, ensure factual correctness, minimize hallucinations, and avoid repetitive output
-
-### ChatBot and LangChain Roadmap items
-
 - Add other tools like search
 - Add agents for SQL and CSV question/answer
 
 ### Getting Started
 
-#### GPU (CUDA)
+First one needs a Python 3.10 environment.  For help installing a Python 3.10 environment, see [Install Python 3.10 Environment](docs/INSTALL.md#install-python-environment).  On newer Ubuntu systems and environment may be installed by just doing:
+```bash
+sudo apt-get install -y build-essential gcc python3.10-dev
+virtualenv -p python3 h2ogpt
+source h2ogpt/bin/activate
+```
+Check your installation by doing:
+```bash
+python --version # should say 3.10.xx
+pip --version  # should say pip 23.x.y ... (python 3.10)
+```
+On some systems, `pip` still refers back to the system one, then one can use `python -m pip` or `pip3` instead of `pip` or try `python3` instead of `python`.
 
+#### TLDR
+
+After Python 3.10 environment installed:
 ```bash
 git clone https://github.com/h2oai/h2ogpt.git
 cd h2ogpt
-pip install -r requirements.txt
-python generate.py --base_model=h2oai/h2ogpt-oig-oasst1-512-6_9b --load_4bit=True
-```
-Then point browser at http://0.0.0.0:7860 (linux) or http://localhost:7860 (windows/mac) or the public live URL printed by the server (disable shared link with `--share=False`).
+# fix any bad env
+pip uninstall -y pandoc pypandoc pypandoc-binary
+# broad support, but no training-time or data creation dependencies
+for fil in requirements.txt reqs_optional/requirements_optional_langchain.txt reqs_optional/requirements_optional_gpt4all.txt reqs_optional/requirements_optional_langchain.gpllike.txt reqs_optional/requirements_optional_langchain.urls.txt ; do pip install -r $fil ; done
+# Optional: support docx, pptx, ArXiv, etc.
+sudo apt-get install -y libmagic-dev poppler-utils tesseract-ocr libreoffice
+# Optional: for supporting unstructured package
+python -m nltk.downloader all
+````
 
-For quickly using a private document collection for Q/A, place documents (PDFs, text, etc.) into a folder called `user_path` and run
+Place all documents in `user_path` or upload in UI.
+
+UI using GPU with at least 24GB with streaming:
 ```bash
-pip install -r requirements_optional_langchain.txt
-python generate.py --base_model=h2oai/h2ogpt-oig-oasst1-512-6_9b  --load_4bit=True --langchain_mode=UserData --user_path=user_path
+python generate.py --base_model=h2oai/h2ogpt-oasst1-512-12b --load_8bit=True  --score_model=None --langchain_mode='UserData' --user_path=user_path
 ```
-Any other instruct-tuned base models can be used, including non-h2oGPT ones.  For more ways to ingest on CLI and control see [LangChain Readme](README_LangChain.md)
-
-#### CPU
-
-Follow instructions here: [CPU](FAQ.md#CPU).  Then for LangChain support, put documents in `user_path` folder, and run:
+UI using CPU
 ```bash
-python generate.py --base_model=gptj --score_model=None --langchain_mode=UserData --user_path=user_path
+python generate.py --base_model='llama' --prompt_type=wizard2 --score_model=None --langchain_mode='UserData' --user_path=user_path
 ```
-
-#### Larger models require more GPU memory
-
-Depending on available GPU memory, you can load differently sized models. For multiple GPUs, automatic sharding can be enabled with `--infer_devices=False`, but this is disabled by default since cuda:x cuda:y mismatches can occur.
-
-For GPUs with at least 24GB of memory, we recommend:
-```bash
-python generate.py --base_model=h2oai/h2ogpt-oasst1-512-12b --load_8bit=True
-```
-or
-```bash
-python generate.py --base_model=h2oai/h2ogpt-oasst1-512-20b --load_4bit=True
-```
-For GPUs with at least 48GB of memory, we recommend:
-```bash
-python generate.py --base_model=h2oai/h2ogpt-oasst1-512-20b --load_8bit=True
-```
-etc.
-
-More information about the models can be found on [H2O.ai's Hugging Face page](https://huggingface.co/h2oai/).
 
 ### Development
 
-- To create a development environment for training and generation, follow the [installation instructions](INSTALL.md).
-- To fine-tune any LLM models on your data, follow the [fine-tuning instructions](FINETUNE.md).
-- To create a container for deployment, follow the [Docker instructions](INSTALL-DOCKER.md).
+- To create a development environment for training and generation, follow the [installation instructions](docs/INSTALL.md).
+- To fine-tune any LLM models on your data, follow the [fine-tuning instructions](docs/FINETUNE.md).
+- To create a container for deployment, follow the [Docker instructions](docs/INSTALL-DOCKER.md).
+- To run h2oGPT tests, run `pip install requirements-parser ; pytest -s -v tests client/tests`
 
 ### Help
 
-For help installing a Python 3.10 environment, CUDA toolkit, installing flash attention support, see the [installation instructions](INSTALL.md)
+- Flash attention support, see [Flash Attention](docs/INSTALL.md#flash-attention)
 
-You can also use [Docker](INSTALL-DOCKER.md#containerized-installation-for-inference-on-linux-gpu-servers) for inference.
+- [Docker](docs/INSTALL-DOCKER.md#containerized-installation-for-inference-on-linux-gpu-servers) for inference.
 
-[FAQs](FAQ.md)
+- [FAQs](docs/FAQ.md)
 
-### More links, context, competitors, models, datasets
+- [README for LangChain](docs/README_LangChain.md)
 
-[Links](LINKS.md)
+- More [Links](docs/LINKS.md), context, competitors, models, datasets
 
 ### Acknowledgements
 
@@ -179,3 +202,8 @@ Please read this disclaimer carefully before using the large language model prov
 - Changes to this Disclaimer: The developers of this repository reserve the right to modify or update this disclaimer at any time without prior notice. It is the user's responsibility to periodically review the disclaimer to stay informed about any changes.
 
 By using the large language model provided in this repository, you agree to accept and comply with the terms and conditions outlined in this disclaimer. If you do not agree with any part of this disclaimer, you should refrain from using the model and any content generated by it.
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=h2oai/h2ogpt&type=Timeline)](https://star-history.com/#h2oai/h2ogpt&Timeline)
+
