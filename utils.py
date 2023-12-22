@@ -1,6 +1,7 @@
 import contextlib
 import functools
 import hashlib
+import inspect
 import os
 import gc
 import pathlib
@@ -13,6 +14,7 @@ import time
 import traceback
 import zipfile
 from datetime import datetime
+
 import filelock
 import requests, uuid
 from typing import Tuple, Callable, Dict
@@ -373,18 +375,15 @@ def sanitize_filename(name):
     return name
 
 
-def shutil_rmtree_simple(*args, **kwargs):
-    path = args[0]
-    assert not os.path.samefile(path, "./tmp"), "Should not be trying to remove entire data directory: %s" % str(path)
-    # print("Removing path %s" % args[0])  # for debugging
+def shutil_rmtree(*args, **kwargs):
     return shutil.rmtree(*args, **kwargs)
 
 
-def remove_simple(path: str):
+def remove(path: str):
     try:
         if path is not None and os.path.exists(path):
             if os.path.isdir(path):
-                shutil_rmtree_simple(path, ignore_errors=True)
+                shutil_rmtree(path, ignore_errors=True)
             else:
                 with contextlib.suppress(FileNotFoundError):
                     os.remove(path)
@@ -410,7 +409,7 @@ def atomic_move_simple(src, dst):
         shutil.move(src, dst)
     except (shutil.Error, FileExistsError):
         pass
-    remove_simple(src)
+    remove(src)
 
 
 def download_simple(url, dest=None, print_func=None):
@@ -483,7 +482,7 @@ def download(url, dest=None, dest_path=None):
         shutil.move(dest_tmp, dest)
     except FileExistsError:
         pass
-    remove_simple(dest_tmp)
+    remove(dest_tmp)
     return dest
 
 
@@ -785,3 +784,74 @@ class ProgressParallel(Parallel):
             self._pbar.total = self.n_dispatched_tasks
         self._pbar.n = self.n_completed_tasks
         self._pbar.refresh()
+
+
+def get_kwargs(func, exclude_names=None, **kwargs):
+    func_names = list(inspect.signature(func).parameters)
+    missing_kwargs = [x for x in func_names if x not in kwargs]
+    if exclude_names:
+        for k in exclude_names:
+            if k in missing_kwargs:
+                missing_kwargs.remove(k)
+            if k in func_names:
+                func_names.remove(k)
+    assert not missing_kwargs, "Missing %s" % missing_kwargs
+    kwargs = {k: v for k, v in kwargs.items() if k in func_names}
+    return kwargs
+
+
+import pkg_resources
+have_faiss = False
+
+try:
+    assert pkg_resources.get_distribution('faiss') is not None
+    have_faiss = True
+except (pkg_resources.DistributionNotFound, AssertionError):
+    pass
+try:
+    assert pkg_resources.get_distribution('faiss_gpu') is not None
+    have_faiss = True
+except (pkg_resources.DistributionNotFound, AssertionError):
+    pass
+try:
+    assert pkg_resources.get_distribution('faiss_cpu') is not None
+    have_faiss = True
+except (pkg_resources.DistributionNotFound, AssertionError):
+    pass
+
+
+def hash_file(file):
+    try:
+        import hashlib
+
+        # BUF_SIZE is totally arbitrary, change for your app!
+        BUF_SIZE = 65536  # lets read stuff in 64kb chunks!
+
+        md5 = hashlib.md5()
+        #sha1 = hashlib.sha1()
+
+        with open(file, 'rb') as f:
+            while True:
+                data = f.read(BUF_SIZE)
+                if not data:
+                    break
+                md5.update(data)
+                #sha1.update(data)
+    except BaseException as e:
+        print("Cannot hash %s due to %s" % (file, str(e)))
+        traceback.print_exc()
+        md5 = None
+    return md5.hexdigest()
+
+
+def start_faulthandler():
+    # If hit server or any subprocess with signal SIGUSR1, it'll print out all threads stack trace, but wont't quit or coredump
+    # If more than one fork tries to write at same time, then looks corrupted.
+    import faulthandler
+
+    # SIGUSR1 in h2oai/__init__.py as well
+    faulthandler.enable()
+    if hasattr(faulthandler, 'register'):
+        # windows/mac
+        import signal
+        faulthandler.register(signal.SIGUSR1)

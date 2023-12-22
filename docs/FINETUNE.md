@@ -69,6 +69,12 @@ This will take several hours and produce a file called [h2ogpt-oig-oasst1-instru
 
 Note: This dataset is cleaned up, but might still contain undesired words and concepts.
 
+### Install training specific dependencies
+
+```bash
+pip install -r reqs_optional/requirements_optional_training.txt
+```
+
 ### Perform fine-tuning on high-quality instruct data
 
 Fine-tune on a single node with NVIDIA GPUs A6000/A6000Ada/A100/H100, needs 48GB of GPU memory per GPU for default settings (fast 16-bit training).
@@ -80,7 +86,7 @@ torchrun --nproc_per_node=$NGPUS finetune.py --base_model=h2oai/h2ogpt-oasst1-51
 This will download the model, load the data, and generate an output directory `h2ogpt_lora_weights` containing the fine-tuned state.
 
 
-### Start your own fine-tuned chat bot
+### Start your own fine-tuned chatbot
 
 Start a chatbot, also requires 48GB GPU. Use `--load_4bit=True` instead for 24GB GPUs.
 ```
