@@ -1,18 +1,35 @@
 # devel needed for bitsandbytes requirement of libcudart.so, otherwise runtime sufficient
-FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
+FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu20.04
 
-ARG DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y \
-    git \
-    curl \
-    software-properties-common \
-    && add-apt-repository ppa:deadsnakes/ppa \
-    && apt install -y python3.10 \
-    && rm -rf /var/lib/apt/lists/*
+ENV PATH="/h2ogpt_conda/bin:${PATH}"
+ARG PATH="/h2ogpt_conda/bin:${PATH}"
+
+ENV HOME=/workspace
+ENV CUDA_HOME=/usr/local/cuda-11.8
+ENV VLLM_CACHE=/workspace/.vllm_cache
+ENV TIKTOKEN_CACHE_DIR=/workspace/tiktoken_cache
+
 WORKDIR /workspace
-COPY requirements.txt requirements.txt
-RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
-RUN python3.10 -m pip install -r requirements.txt
-COPY . .
-ENTRYPOINT [ "python3.10"]
+
+COPY . /workspace/
+
+RUN cd /workspace && ./docker_build_script_ubuntu.sh
+
+RUN chmod -R a+rwx /workspace
+
+ARG user=h2ogpt
+ARG group=h2ogpt
+ARG uid=1000
+ARG gid=1000
+
+RUN groupadd -g ${gid} ${group} && useradd -u ${uid} -g ${group} -s /bin/bash ${user}
+
+EXPOSE 8888
+EXPOSE 7860
+EXPOSE 5000
+
+USER h2ogpt
+
+ENTRYPOINT ["python3.10"]

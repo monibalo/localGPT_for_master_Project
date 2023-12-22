@@ -2,12 +2,17 @@ import os
 import sys
 from functools import partial
 from typing import List, Union
-import fire
 import numpy as np
 
-from loaders import get_loaders, get_tokenizer
-from prompter import generate_prompt, prompt_types
-from utils import get_githash, copy_code
+if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+if os.path.dirname('src') not in sys.path:
+    sys.path.append('src')
+
+from src.loaders import get_loaders, get_tokenizer
+from src.prompter import generate_prompt, prompt_types, PromptType
+from src.utils import get_githash, copy_code, H2O_Fire
 import torch
 
 
@@ -26,16 +31,9 @@ def train(
         save_code: bool = False,
         run_id: int = None,
 
-        base_model: str = 'h2oai/h2ogpt-oig-oasst1-512-6_9b',
-        # base_model: str = 'h2oai/h2ogpt-oasst1-512-12b',
-        # base_model: str = 'h2oai/h2ogpt-oasst1-512-20b',
-        # base_model: str = 'EleutherAI/gpt-neox-20b',
-        # base_model: str = 'EleutherAI/pythia-12b-deduped',
-        # base_model: str = 'togethercomputer/GPT-NeoXT-Chat-Base-20B',
-        # base_model: str = 'decapoda-research/llama-7b-hf',
-        # base_model: str = 'decapoda-research/llama-13b-hf',
-        # base_model: str = 'decapoda-research/llama-30b-hf',
-        # base_model: str = 'EleutherAI/gpt-j-6B',
+        base_model: str = 'h2oai/h2ogpt-4096-llama2-7b',
+        # base_model: str = 'h2oai/h2ogpt-4096-llama2-13b',
+        # base_model: str = 'h2oai/h2ogpt-4096-llama2-70b',
 
         # only needed if base_model is self-exported HF state without tokenizer
         tokenizer_base_model: str = None,
@@ -64,6 +62,7 @@ def train(
         batch_size: int = 128,
         micro_batch_size: int = 4,
         gradient_checkpointing=False,  # unnecessary with gradient accumulation enabled
+        bf16=False,  # needed (and automatically enabled) for llama2-7b
         fp16=True,
         train_8bit=False,
         train_4bit=False,
@@ -104,14 +103,16 @@ def train(
         save_total_limit: int = 3,
         add_eos_token: bool = False,
 ):
-
     if llama_flash_attn:
         # Need to call this before importing transformers.
-        from llama_flash_attn_monkey_patch import replace_llama_attn_with_flash_attn
+        from src.llama_flash_attn_monkey_patch import replace_llama_attn_with_flash_attn
         replace_llama_attn_with_flash_attn()
+    if "llama2-7b" in base_model:
+        fp16 = False
+        bf16 = True
 
     # allow set token directly
-    use_auth_token = os.environ.get("HUGGINGFACE_API_TOKEN", use_auth_token)
+    use_auth_token = os.environ.get("HUGGING_FACE_HUB_TOKEN", use_auth_token)
 
     prompt_type = str(prompt_type)  # migration from integers
     assert prompt_type in prompt_types
@@ -129,10 +130,12 @@ def train(
     if not output_dir:
         output_dir = f"{base_model.split('/')[-1]}.{data_path.replace('/', '')}.{num_epochs}_epochs.{get_githash() or 'nogit'}.{run_id}"
         if os.path.exists(output_dir) and not resume_from_checkpoint:
-            raise FileExistsError(f"output_dir {output_dir} based on run_id {run_id} already exists. Please pick a different run_id.")
+            raise FileExistsError(
+                f"output_dir {output_dir} based on run_id {run_id} already exists. Please pick a different run_id.")
     else:
         if os.path.exists(output_dir) and not resume_from_checkpoint:
-            raise FileExistsError(f"output_dir {output_dir} already exists. Please pick a different output_dir, or specify a run_id instead.")
+            raise FileExistsError(
+                f"output_dir {output_dir} already exists. Please pick a different output_dir, or specify a run_id instead.")
     device_map = "auto"
 
     if save_code:
@@ -142,11 +145,11 @@ def train(
     if llama_type is None:
         llama_type = "llama" in base_model.lower()
     if llama_type and llama_flash_attn:
-        import pkg_resources
+        from importlib.metadata import distribution, PackageNotFoundError
         try:
-            pkg_resources.get_distribution('flash_attn')
+            distribution('flash_attn')
             can_do_flash_attn = True
-        except (pkg_resources.DistributionNotFound, pkg_resources.ContextualVersionConflict):
+        except (PackageNotFoundError, AssertionError):
             can_do_flash_attn = False
 
         if not can_do_flash_attn:
@@ -181,9 +184,10 @@ def train(
             log("num_gpus: %d" % gpus)
             log("max mem: %s" % max_memory)
 
-    model_loader, tokenizer_loader = get_loaders(llama_type=llama_type, model_name=base_model, reward_type=False)
+    model_loader, tokenizer_loader, conditional_type = (
+        get_loaders(model_name=base_model, reward_type=False, llama_type=llama_type))
 
-    model = model_loader.from_pretrained(
+    model = model_loader(
         base_model,
         load_in_8bit=train_8bit,
         load_in_4bit=train_4bit,
@@ -191,9 +195,11 @@ def train(
         torch_dtype=torch.float16,
         max_memory=max_memory,
         local_files_only=local_files_only,
+        trust_remote_code=True,
         resume_download=resume_download,
         use_auth_token=use_auth_token,
     )
+    print(model)
     if gpus > 1:
         if not ddp:
             log("model parallel")
@@ -397,7 +403,8 @@ def train(
     if train_data_mix_in:
         train_data = concatenate_datasets([train_data, train_data_mix_in])
     log("Tokenizing %s training rows" % train_data.num_rows)
-    train_data = train_data.shuffle().map(generate_and_tokenize_prompt_fun, num_proc=os.cpu_count() // torch.cuda.device_count())
+    train_data = train_data.shuffle().map(generate_and_tokenize_prompt_fun,
+                                          num_proc=os.cpu_count() // torch.cuda.device_count())
     if drop_truncations:
         log("avoid keeping truncated cases to avoid contaminating model with truncation cases.  Original size: %s" % train_data.num_rows)
         prune_long_sequences_func = partial(prune_long_sequences, cutoff_len=cutoff_len)
@@ -412,7 +419,8 @@ def train(
 
     if valid_data:
         log("Tokenizing %s validation rows" % valid_data.num_rows)
-        valid_data = valid_data.shuffle().map(generate_and_tokenize_prompt_fun, num_proc=os.cpu_count() // torch.cuda.device_count())
+        valid_data = valid_data.shuffle().map(generate_and_tokenize_prompt_fun,
+                                              num_proc=os.cpu_count() // torch.cuda.device_count())
         val_set_size = len(valid_data)
     else:
         val_set_size = 0
@@ -467,7 +475,7 @@ def train(
     elif save_steps > eval_steps:
         # save steps must be round multiple of eval_steps
         save_steps0 = save_steps
-        save_steps = max(1, (save_steps//eval_steps)) * eval_steps
+        save_steps = max(1, (save_steps // eval_steps)) * eval_steps
         if save_steps0 != save_steps:
             log("Auto converted save_steps from %s to %s" % (save_steps0, save_steps))
 
@@ -477,21 +485,21 @@ def train(
         label_ids = eval_preds.label_ids
         predictions = eval_preds.predictions
 
-        #inputs = np.where(inputs != -100, inputs, tokenizer.pad_token_id)
-        #decoded_inputs = tokenizer.batch_decode(inputs, skip_special_tokens=True)
-        #decoded_inputs = [pred.strip() for pred in decoded_inputs]
+        # inputs = np.where(inputs != -100, inputs, tokenizer.pad_token_id)
+        # decoded_inputs = tokenizer.batch_decode(inputs, skip_special_tokens=True)
+        # decoded_inputs = [pred.strip() for pred in decoded_inputs]
 
         label_ids = np.where(label_ids != -100, label_ids, tokenizer.pad_token_id)
         # tokenizer behavior like generate time
         decoded_labels = tokenizer.batch_decode(label_ids, skip_special_tokens=True,
-                                                           clean_up_tokenization_spaces=True)
+                                                clean_up_tokenization_spaces=True)
         decoded_labels = [pred.strip() for pred in decoded_labels]
 
         predictions = np.argmax(predictions, -1)
         predictions = np.where(predictions != -100, predictions, tokenizer.pad_token_id)
         # tokenizer behavior like generate time
         decoded_predictions = tokenizer.batch_decode(predictions, skip_special_tokens=True,
-                                                                  clean_up_tokenization_spaces=True)
+                                                     clean_up_tokenization_spaces=True)
         decoded_predictions = [pred.strip() for pred in decoded_predictions]
 
         result = {}
@@ -526,6 +534,7 @@ def train(
             num_train_epochs=num_epochs,
             learning_rate=learning_rate,
             gradient_checkpointing=gradient_checkpointing,
+            bf16=bf16,
             fp16=fp16,
             # cosnider 8-bit adam: https://huggingface.co/docs/transformers/v4.18.0/en/performance#8bit-adam
             optim="adamw_torch",  # consider "adafactor" to save memory
@@ -540,8 +549,7 @@ def train(
             load_best_model_at_end=True if val_set_size > 0 else False,
             ddp_find_unused_parameters=False if ddp else None,
             group_by_length=group_by_length,
-            #fsdp="shard_grad_op auto_wrap" if gpus > 1 and not ddp else None,
-            #fsdp_min_num_params=20000 if gpus > 1 and not ddp else None,
+            # fsdp=gpus > 1 and not ddp,
             report_to='tensorboard' if not neptune_run else 'neptune',
         ),
         data_collator=transformers.DataCollatorForSeq2Seq(
@@ -551,13 +559,6 @@ def train(
         **trainer_kwargs,
     )
     model.config.use_cache = False
-
-    old_state_dict = model.state_dict
-    from peft import get_peft_model_state_dict
-
-    model.state_dict = (
-        lambda self, *_, **__: get_peft_model_state_dict(self, old_state_dict())
-    ).__get__(model, type(model))
 
     if torch.__version__ >= "2" and sys.platform != "win32":
         model = torch.compile(model)
@@ -615,10 +616,13 @@ def generate_and_tokenize_prompt(data_point, prompt_type=None, train_on_inputs=F
     assert prompt_type is not None
     assert cutoff_len is not None
     assert tokenizer is not None
-    full_prompt, _, _, _ = generate_prompt(data_point, prompt_type, False, False)
+    prompt_dict = ''  # only for custom prompt_type
+    assert prompt_type != PromptType.custom.name, "custom not setup for finetune"
+    full_prompt, _, _, _, _ = generate_prompt(data_point, prompt_type, prompt_dict, False, False, False)
     tokenized_full_prompt = tokenize(full_prompt, tokenizer, cutoff_len, add_eos_token=add_eos_token)
     if not train_on_inputs:
-        user_prompt, _, _, _ = generate_prompt({**data_point, "output": ""}, prompt_type, False, False)
+        user_prompt, _, _, _, _ = generate_prompt({**data_point, "output": ""}, prompt_type, prompt_dict, False, False,
+                                                  False)
         tokenized_user_prompt = tokenize(user_prompt, tokenizer, cutoff_len, add_eos_token=add_eos_token)
         user_prompt_len = len(tokenized_user_prompt["input_ids"])
         if add_eos_token:
@@ -634,10 +638,10 @@ def generate_and_tokenize_prompt(data_point, prompt_type=None, train_on_inputs=F
 
 
 def test_debug():
-    fire.Fire(train)
+    H2O_Fire(train)
 
 
-if __name__ == "__main__":
+def entrypoint_main():
     CONFIG = "NCCL_P2P_LEVEL=LOC WORLD_SIZE=5 torchrun --nnodes=5 --master_addr=10.10.10.2 --master_port=1111 --nproc_per_node=1"
     CMD = "finetune.py --data_path=config.json --num_epochs=1 --base_model=decapoda-research/llama-13b-hf"
     log(f"""
@@ -664,6 +668,11 @@ NCCL_P2P_LEVEL=LOC WORLD_SIZE=7 CUDA_VISIBLE_DEVICES="0,1" torchrun --node_rank 
 
     if os.environ.get("LOCAL_RANK") is None:
         # then not using torchrun, so can't do distributed, ensure CVD set
-        assert os.environ.get("CUDA_VISIBLE_DEVICES") is not None, "Run python script using: torchrun finetune.py OR set CUDA_VISIBLE_DEVICES to single GPU"
+        assert os.environ.get(
+            "CUDA_VISIBLE_DEVICES") is not None, "Run python script using: torchrun finetune.py OR set CUDA_VISIBLE_DEVICES to single GPU"
 
-    fire.Fire(train)
+    H2O_Fire(train)
+
+
+if __name__ == "__main__":
+    entrypoint_main()
